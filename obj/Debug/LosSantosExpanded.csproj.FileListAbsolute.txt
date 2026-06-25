@@ -1,0 +1,9 @@
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\bin\Debug\LosSantosExpanded.dll
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\bin\Debug\LosSantosExpanded.pdb
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\bin\Debug\RagePluginHookSDK.dll
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\bin\Debug\RagePluginHookSDK.xml
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\obj\Debug\LosSantosExpanded.csproj.AssemblyReference.cache
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\obj\Debug\LosSantosExpanded.csproj.CoreCompileInputs.cache
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\obj\Debug\LosSanto.A6592FE0.Up2Date
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\obj\Debug\LosSantosExpanded.dll
+C:\Users\GABRIEL\source\GTAMods\Los Santos Expanded\LosSantoSExpandedv0.01\lse\LosSantosExpanded\LosSantosExpanded\obj\Debug\LosSantosExpanded.pdb
