@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Xml.Serialization;
 using LosSantosExpanded.lse.Systems.Core;
+using LosSantosExpanded.lse.Systems.Menu;
 
 namespace LosSantosExpanded.lse.Systems.Wallet
 {
@@ -13,8 +14,6 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         private string _savePath;
         private int _cash;
         private readonly object _lock = new object();
-
-        // Evento disparado sempre que o saldo muda
         public event Action<int, int> OnBalanceChanged; // (novoValor, valorAntigo)
 
         // Propriedade pública segura para leitura
@@ -26,16 +25,15 @@ namespace LosSantosExpanded.lse.Systems.Wallet
             }
             private set
             {
-                lock (_lock)
+                // NOTA: Este setter deve ser chamado APENAS de dentro de um lock(_lock) externo
+                // para evitar double-lock. Use os métodos internos _SetCashUnsafe() diretamente.
+                int oldValue = _cash;
+                if (value < 0) value = 0; // Nunca permitir negativo
+                if (_cash != value)
                 {
-                    int oldValue = _cash;
-                    if (value < 0) value = 0; // Nunca permitir negativo
-                    if (_cash != value)
-                    {
-                        _cash = value;
-                        OnBalanceChanged?.Invoke(_cash, oldValue);
-                        SaveData(); // Salva automaticamente a cada alteração
-                    }
+                    _cash = value;
+                    OnBalanceChanged?.Invoke(_cash, oldValue);
+                    SaveData(); // Salva automaticamente a cada alteração
                 }
             }
         }
@@ -44,13 +42,22 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         #region Inicialização e Finalização
         public override void Initialize()
         {
-            base.Initialize(); // Chama o base para logging padrão se quiser
+            base.Initialize();
+            try
+            {
+                MenuSystem.OnAddMoneyRequested += OnAddMoneyRequested; // Inscreve-se no evento do menu
+            }
+            catch (Exception ex)
+            {
+                Game.LogTrivial($"[LSE] ERRO ao inscrever-se no evento do MenuSystem: {ex.Message}");
+            }
 
             try
             {
                 // Define o caminho do arquivo de save (dentro da pasta do mod)
                 string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 string modFolder = Path.Combine(documentsPath, "Rockstar Games", "GTA V", "LosSantosExpanded");
+
 
                 if (!Directory.Exists(modFolder))
                     Directory.CreateDirectory(modFolder);
@@ -60,7 +67,7 @@ namespace LosSantosExpanded.lse.Systems.Wallet
                 // Carrega os dados salvos
                 LoadData();
 
-                // Opcional: Sincroniza com o dinheiro nativo do jogo ao iniciar
+                // Sincroniza com o dinheiro nativo do jogo ao iniciar
                 SyncFromGame();
 
                 Game.LogTrivial($"[LSE] WalletSystem: Inicializado com ${Cash}.");
@@ -68,16 +75,20 @@ namespace LosSantosExpanded.lse.Systems.Wallet
             catch (Exception ex)
             {
                 Game.LogTrivial($"[LSE] ERRO CRÍTICO ao inicializar WalletSystem: {ex.Message}");
-                // Em caso de erro, inicia com 0 para não quebrar o mod
                 _cash = 0;
             }
+        }
+        private void OnAddMoneyRequested(int amount)
+        {
+            AddMoney(amount);
         }
 
         public override void Shutdown()
         {
+            MenuSystem.OnAddMoneyRequested -= OnAddMoneyRequested; // Remove a inscrição do evento
+            
             try
             {
-                // Salva antes de fechar
                 SaveData();
                 Game.LogTrivial($"[LSE] WalletSystem: Finalizado. Saldo final: ${Cash}.");
             }
@@ -92,28 +103,30 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         }
         #endregion
 
-        #region Métodos Públicos (API do Sistema)
-        /// <summary>
+        #region Update (teclas de atalho)
         public override void Update()
         {
             try
             {
-                // Verifica teclas a cada frame
+                // F6 → Adiciona $1000
                 if (Game.IsKeyDown(System.Windows.Forms.Keys.F6))
                 {
-                    AddMoney(1000); // Chama o método de negócio
-                    Game.LogTrivial("[LSE] WalletSystem: Adicionado 1000 Reais à carteira via tecla F6.");
+                    AddMoney(1000);
+                    Game.LogTrivial("[LSE] WalletSystem: Adicionado $1000 via tecla F6.");
                 }
 
+                // L → Remove $500
                 if (Game.IsKeyDown(System.Windows.Forms.Keys.L))
                 {
                     TryRemoveMoney(500);
-                    Game.LogTrivial("[LSE] WalletSystem: Removido 500 Reais da carteira via tecla F7.");
+                    Game.LogTrivial("[LSE] WalletSystem: Tentativa de remover $500 via tecla L.");
                 }
-                if (Game.IsKeyDown(System.Windows.Forms.Keys.F7))
+
+                // F7 → Exibe saldo
+                if (Game.IsKeyDown(System.Windows.Forms.Keys.J))
                 {
                     ShowWallet();
-                    Game.LogTrivial($"[LSE] ERRO no Update do Saldo:");
+                    Game.LogTrivial("[LSE] WalletSystem: Saldo exibido via tecla F7.");
                 }
             }
             catch (Exception ex)
@@ -121,6 +134,12 @@ namespace LosSantosExpanded.lse.Systems.Wallet
                 Game.LogTrivial($"[LSE] ERRO no Update do WalletSystem: {ex.Message}");
             }
         }
+        #endregion
+
+        #region Métodos Públicos (API do Sistema)
+
+        /// <summary>
+        /// Adiciona dinheiro à carteira.
         /// </summary>
         public void AddMoney(int amount)
         {
@@ -132,11 +151,14 @@ namespace LosSantosExpanded.lse.Systems.Wallet
 
             lock (_lock)
             {
-                Cash += amount; // A propriedade já dispara evento e salva
+                // FIX: Operamos diretamente em _cash para evitar double-lock com a propriedade Cash
+                int oldValue = _cash;
+                _cash += amount;
+                OnBalanceChanged?.Invoke(_cash, oldValue);
+                SaveData();
             }
 
-            // Opcional: mostra notificação
-            Game.DisplayNotification($"~g~+${amount:N0}~s~ na carteira.");
+            Game.DisplayNotification($"~g~+${amount:N0}~s~ adicionado à carteira.");
         }
 
         /// <summary>
@@ -159,26 +181,41 @@ namespace LosSantosExpanded.lse.Systems.Wallet
                     return false;
                 }
 
-                Cash -= amount;
-                Game.DisplayNotification($"~r~-${amount:N0}~s~ da carteira.");
+                // FIX: Operamos diretamente em _cash para evitar double-lock com a propriedade Cash
+                int oldValue = _cash;
+                _cash -= amount;
+                OnBalanceChanged?.Invoke(_cash, oldValue);
+                SaveData();
+
+                Game.DisplayNotification($"~r~-${amount:N0}~s~ removido da carteira.");
                 return true;
             }
         }
 
         /// <summary>
+        /// Exibe o saldo atual via notificação na tela.
+        /// </summary>
         public void ShowWallet()
         {
             int currentCash = Cash;
-            Game.LogTrivial($"Saldo: {currentCash}$");
-            Game.DisplayNotification($"Saldo: {currentCash}$");
+            Game.LogTrivial($"[LSE] WalletSystem: Saldo atual: ${currentCash}.");
+            Game.DisplayNotification($"~b~Carteira:~s~ ${currentCash:N0}");
         }
 
+        /// <summary>
         /// Define um valor exato para a carteira (útil para carregar saves).
         /// </summary>
         public void SetMoney(int newAmount)
         {
             if (newAmount < 0) newAmount = 0;
-            Cash = newAmount;
+
+            lock (_lock)
+            {
+                int oldValue = _cash;
+                _cash = newAmount;
+                OnBalanceChanged?.Invoke(_cash, oldValue);
+                SaveData();
+            }
         }
 
         /// <summary>
@@ -191,7 +228,7 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         }
 
         /// <summary>
-        /// Sincroniza o dinheiro do jogo com o da carteira (pega o dinheiro nativo).
+        /// Sincroniza o dinheiro do jogo para a carteira (lê o dinheiro nativo).
         /// </summary>
         public void SyncFromGame()
         {
@@ -211,7 +248,7 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         }
 
         /// <summary>
-        /// Sincroniza a carteira com o dinheiro do jogo (sobrescreve o dinheiro nativo).
+        /// Sincroniza a carteira para o dinheiro do jogo (sobrescreve o dinheiro nativo).
         /// CUIDADO: Isso modifica o dinheiro do personagem no jogo.
         /// </summary>
         public void SyncToGame()
@@ -248,7 +285,6 @@ namespace LosSantosExpanded.lse.Systems.Wallet
                 }
                 else
                 {
-                    // Arquivo não existe, inicia com 0 ou valor padrão
                     _cash = 0;
                     Game.LogTrivial("[LSE] WalletSystem: Nenhum arquivo de save encontrado. Iniciando com $0.");
                     SaveData(); // Cria o arquivo com valor padrão
@@ -257,7 +293,7 @@ namespace LosSantosExpanded.lse.Systems.Wallet
             catch (Exception ex)
             {
                 Game.LogTrivial($"[LSE] ERRO ao carregar dados da carteira: {ex.Message}");
-                _cash = 0; // Fallback seguro
+                _cash = 0;
             }
         }
 
@@ -265,7 +301,6 @@ namespace LosSantosExpanded.lse.Systems.Wallet
         {
             try
             {
-                // Evita salvar se o caminho não estiver definido (ex: erro na inicialização)
                 if (string.IsNullOrEmpty(_savePath)) return;
 
                 XmlSerializer serializer = new XmlSerializer(typeof(WalletData));

@@ -1,6 +1,9 @@
 ﻿using Rage;
 using System;
 using System.Collections.Generic;
+using LosSantosExpanded.lse.Systems.Core;
+using LosSantosExpanded.lse.Systems.Wallet;
+using LosSantosExpanded.lse.Systems.Menu;
 
 namespace LosSantosExpanded
 {
@@ -8,28 +11,29 @@ namespace LosSantosExpanded
     {
         private static ModController _instance;
         public static ModController Instance
-            =>_instance ?? (_instance = new ModController());
-        private readonly List<ISystem> _systems = new List<ISystem>();
+            => _instance ?? (_instance = new ModController());
+
+        // FIX: Lista agora usa IBaseSystem (namespace correto do projeto)
+        private readonly List<IBaseSystem> _systems = new List<IBaseSystem>();
 
         private bool _isRunning;
 
-        private ModController()
-        {
+        private ModController() { }
 
-        }
         public void Initialize()
         {
-            Game.LogTrivial("[LSE] Inicialization Sistem.");
+            Game.LogTrivial("[LSE] Inicializando sistemas...");
             RegisterSystems();
+
             foreach (var system in _systems)
             {
                 system.Initialize();
             }
 
             _isRunning = true;
-
-            Game.LogTrivial("[LSE] Initialization complete");
+            Game.LogTrivial("[LSE] Inicialização completa.");
         }
+
         public void Run()
         {
             while (_isRunning)
@@ -42,6 +46,7 @@ namespace LosSantosExpanded
                 }
             }
         }
+
         public void Shutdown()
         {
             foreach (var system in _systems)
@@ -50,18 +55,32 @@ namespace LosSantosExpanded
             }
 
             _systems.Clear();
-
             _isRunning = false;
+        }
+
+        /// <summary>
+        /// FIX: Método adicionado para que outros sistemas possam buscar referências entre si.
+        /// Ex: MenuSystem busca WalletSystem via GetSystem<WalletSystem>()
+        /// </summary>
+        public T GetSystem<T>() where T : IBaseSystem
+        {
+            foreach (var system in _systems)
+            {
+                if (system is T match)
+                    return match;
+            }
+            return null;
         }
 
         private void RegisterSystems()
         {
-            // Futuramente:
-            // _systems.Add(new PlayerSystem());
-            // _systems.Add(new EconomySystem());
-            // _systems.Add(new VehicleSystem());
-            // _systems.Add(new WorldSystem());
+            // FIX: Sistemas agora são registrados corretamente.
+            // A ordem importa: WalletSystem deve vir antes do MenuSystem,
+            // pois o MenuSystem depende do WalletSystem.
+            _systems.Add(new WalletSystem());
+            _systems.Add(new MenuSystem());
+
+            Game.LogTrivial($"[LSE] {_systems.Count} sistema(s) registrado(s).");
         }
     }
 }
-

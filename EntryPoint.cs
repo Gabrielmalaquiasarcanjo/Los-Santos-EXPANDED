@@ -2,7 +2,7 @@
 using Rage;
 using System;
 
-[assembly: Rage.Attributes.Plugin("{[LSE] Alpha Teste build v0.001}", Description = "This is a alpha test in currently in development.", Author = "Geekarcanjo")]
+[assembly: Rage.Attributes.Plugin("[LSE] Alpha Teste build v0.001}", Description = "This is a alpha test in currently in development.", Author = "Geekarcanjo")]
 
 namespace LosSantosExpanded
 {

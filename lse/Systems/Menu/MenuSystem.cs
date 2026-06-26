@@ -1,36 +1,23 @@
-﻿using Rage;
+﻿using System;
+using Rage;
 using RAGENativeUI;
 using RAGENativeUI.Elements;
 using LosSantosExpanded.lse.Systems.Core;
-using LosSantosExpanded.lse.Systems.Wallet;
-using System;
-using System.Windows.Forms;
 
-namespace LosSantosExpanded.Systems.Menu
+namespace LosSantosExpanded.lse.Systems.Menu
 {
-    public class MenuSystem : IBaseSystem
+    internal class MenuSystem : IBaseSystem
     {
         private MenuPool _menuPool;
         private UIMenu _mainMenu;
-        private UIMenu _moneySubmenu;
-        
-        private WalletSystem _wallet;
-        private bool _menuKeyWasDown = false;
         private bool _isInitialized = false;
-
+        public static event Action<int> OnAddMoneyRequested; // Evento para notificar quando um item do menu é selecionado
         public override void Initialize()
         {
-            if (_isInitialized) return;
-            
+            Game.LogTrivial("[LSE] Inicializando MenuSystem...");
+
             try
             {
-                // Obtém referência do WalletSystem
-                _wallet = ModController.Instance?.GetSystem<WalletSystem>();
-                if (_wallet == null)
-                {
-                    Game.LogTrivial("[LSE] MenuSystem: AVISO - WalletSystem não encontrado. Algumas funções do menu não estarão disponíveis.");
-                }
-
                 // Cria o pool de menus
                 _menuPool = new MenuPool();
 
@@ -38,19 +25,34 @@ namespace LosSantosExpanded.Systems.Menu
                 _mainMenu = new UIMenu("Los Santos EXPANDED", "~b~Menu Principal");
                 _menuPool.Add(_mainMenu);
 
-                // Cria o submenu de dinheiro
-                _moneySubmenu = new UIMenu("Gerenciar Dinheiro", "~g~Adicione ou remova dinheiro");
-                _menuPool.Add(_moneySubmenu);
+                // Adiciona alguns itens de exemplo
+                var itemSair = new UIMenuItem("Sair", "Fecha o menu.");
+                _mainMenu.AddItem(itemSair);
 
-                // Constrói os itens do menu
-                BuildMainMenu();
-                BuildMoneySubmenu();
+                var AdicionarDinheiroItem = new UIMenuItem("Adicionar Dinheiro", "Adiciona $10000 à carteira.");
+                _mainMenu.AddItem(AdicionarDinheiroItem);
+
+                // Evento: quando um item é selecionado
+                _mainMenu.OnItemSelect += (sender, item, index) =>
+                {
+                    if (item == itemSair)
+                    {
+                        _mainMenu.Visible = false;
+                        Game.DisplayNotification("~g~Menu fechado.");
+                    }
+                    else if (item == AdicionarDinheiroItem)
+                    {
+                        OnAddMoneyRequested?.Invoke(10000);
+                        _mainMenu.Visible = false;
+                        Game.DisplayNotification("~g~$10000 adicionado à carteira.");
+                    }
+                };
 
                 // Inicia a fiber que processa o menu
-                GameFiber.StartNew(ProcessMenuLoop);
+                GameFiber.StartNew(ProcessMenus);
 
                 _isInitialized = true;
-                Game.LogTrivial("[LSE] MenuSystem: Inicializado com sucesso.");
+                Game.LogTrivial("[LSE] MenuSystem inicializado com sucesso.");
             }
             catch (Exception ex)
             {
@@ -58,182 +60,45 @@ namespace LosSantosExpanded.Systems.Menu
             }
         }
 
+        public override void Update()
+        {
+            // O processamento contínuo é feito na fiber separada
+            // Este método é chamado a cada tick pelo ModController
+        }
+
         public override void Shutdown()
         {
-            try
-            {
-                if (_mainMenu != null) 
-                    _mainMenu.Visible = false;
-                
-                Game.LogTrivial("[LSE] MenuSystem: Finalizado.");
-            }
-            catch (Exception ex)
-            {
-                Game.LogTrivial($"[LSE] ERRO ao finalizar MenuSystem: {ex.Message}");
-            }
-            finally
-            {
-                base.Shutdown();
-            }
+            Game.LogTrivial("[LSE] Desligando MenuSystem...");
+            OnAddMoneyRequested = null; // Remove todas as inscrições do evento
+            
+            _mainMenu?.Visible = false;
+            _menuPool = null;
+            _mainMenu = null;
+            _isInitialized = false;
         }
 
-        #region Construção do Menu
-
-        private void BuildMainMenu()
+        private void ProcessMenus()
         {
-            // --- Item: Exibir Saldo ---
-            var balanceItem = new UIMenuItem("Exibir Saldo", "Mostra o saldo atual da sua carteira.");
-            balanceItem.Activated += (sender, item) =>
+            while (_isInitialized)
             {
-                if (_wallet != null)
-                {
-                    _wallet.ShowWallet();
-                }
-                else
-                {
-                    Game.DisplayNotification("~r~Erro: Sistema de carteira não disponível.");
-                }
-            };
-            _mainMenu.AddItem(balanceItem);
+                GameFiber.Yield();
 
-            // --- Item: Submenu Dinheiro ---
-            var moneySubmenuItem = new UIMenuItem("Gerenciar Dinheiro", "Acesse opções para adicionar ou remover dinheiro.");
-            moneySubmenuItem.SetRightLabel("→");
-            moneySubmenuItem.Activated += (sender, item) =>
-            {
-                _moneySubmenu.Visible = true;
-            };
-            _mainMenu.AddItem(moneySubmenuItem);
+                // Processa todos os menus do pool
+                _menuPool?.ProcessMenus();
 
-            // --- Item: Sincronizar com o Jogo (Checkbox) ---
-            var syncItem = new UIMenuCheckboxItem(
-                "Sincronizar com o Jogo", 
-                false, 
-                "Ao ativar, o saldo do jogo será sincronizado com a sua carteira."
-            );
-            syncItem.CheckboxEvent += (sender, item, isChecked) =>
-            {
-                if (_wallet != null)
+                // Tecla para abrir/fechar o menu (ex: F6)
+                if (Game.IsKeyDown(System.Windows.Forms.Keys.F7))
                 {
-                    if (isChecked)
+                    if (_mainMenu.Visible)
                     {
-                        _wallet.SyncFromGame();
-                        Game.DisplayNotification("~g~Sincronizado do jogo para a carteira.");
+                        _mainMenu.Visible = false;
                     }
-                    else
+                    else if (!UIMenu.IsAnyMenuVisible)
                     {
-                        _wallet.SyncToGame();
-                        Game.DisplayNotification("~g~Sincronizado da carteira para o jogo.");
+                        _mainMenu.Visible = true;
                     }
-                }
-            };
-            _mainMenu.AddItem(syncItem);
-
-            // --- Item: Fechar Menu ---
-            var closeItem = new UIMenuItem("Fechar Menu", "Fecha o menu.");
-            closeItem.Activated += (sender, item) =>
-            {
-                _mainMenu.Visible = false;
-            };
-            _mainMenu.AddItem(closeItem);
-        }
-
-        private void BuildMoneySubmenu()
-        {
-            // --- Item: Adicionar $1000 ---
-            var addMoneyItem = new UIMenuItem("Adicionar $1000", "Adiciona mil reais à sua carteira.");
-            addMoneyItem.Activated += (sender, item) =>
-            {
-                _wallet?.AddMoney(1000);
-            };
-            _moneySubmenu.AddItem(addMoneyItem);
-
-            // --- Item: Adicionar $5000 ---
-            var addMoney5kItem = new UIMenuItem("Adicionar $5000", "Adiciona cinco mil reais à sua carteira.");
-            addMoney5kItem.Activated += (sender, item) =>
-            {
-                _wallet?.AddMoney(5000);
-            };
-            _moneySubmenu.AddItem(addMoney5kItem);
-
-            // --- Item: Remover $500 ---
-            var removeMoneyItem = new UIMenuItem("Remover $500", "Remove quinhentos reais da sua carteira.");
-            removeMoneyItem.Activated += (sender, item) =>
-            {
-                if (_wallet != null)
-                {
-                    _wallet.TryRemoveMoney(500);
-                }
-            };
-            _moneySubmenu.AddItem(removeMoneyItem);
-
-            // --- Item: Remover $1000 ---
-            var removeMoney1kItem = new UIMenuItem("Remover $1000", "Remove mil reais da sua carteira.");
-            removeMoney1kItem.Activated += (sender, item) =>
-            {
-                if (_wallet != null)
-                {
-                    _wallet.TryRemoveMoney(1000);
-                }
-            };
-            _moneySubmenu.AddItem(removeMoney1kItem);
-
-            // --- Item: Voltar ---
-            var backItem = new UIMenuItem("Voltar", "Retorna ao menu principal.");
-            backItem.Activated += (sender, item) =>
-            {
-                _moneySubmenu.Visible = false;
-                _mainMenu.Visible = true;
-            };
-            _moneySubmenu.AddItem(backItem);
-        }
-
-        #endregion
-
-        #region Loop de Processamento do Menu
-
-        private void ProcessMenuLoop()
-        {
-            while (true)
-            {
-                try
-                {
-                    // Processa entrada e desenha o menu (recomendado pela documentação do RAGENativeUI)[reference:15]
-                    _menuPool.ProcessMenus();
-
-                    // Detecta a tecla F5 para abrir/fechar (com detecção de borda)
-                    bool menuKeyDown = Game.IsKeyDown(Keys.F5);
-                    if (menuKeyDown && !_menuKeyWasDown)
-                    {
-                        if (_mainMenu.Visible)
-                        {
-                            _mainMenu.Visible = false;
-                        }
-                        else
-                        {
-                            // Verifica se nenhum outro menu está visível[reference:16]
-                            if (!UIMenu.IsAnyMenuVisible)
-                            {
-                                _mainMenu.Visible = true;
-                            }
-                        }
-                        _menuKeyWasDown = true;
-                    }
-                    else if (!menuKeyDown)
-                    {
-                        _menuKeyWasDown = false;
-                    }
-
-                    GameFiber.Yield();
-                }
-                catch (Exception ex)
-                {
-                    Game.LogTrivial($"[LSE] ERRO no loop do menu: {ex.Message}");
-                    GameFiber.Yield();
                 }
             }
         }
-
-        #endregion
     }
 }
